@@ -1,117 +1,67 @@
-
-# ============================================================================
-# MAIN RAG SYSTEM
-# ============================================================================
 from src.pipelines.retrieval_pipeline import DataProcessingPipeline
-from src.pipelines.llm_pipeline import OllamaLLM, AgenticRetriever
-
-from typing import List, Any, Dict
+from src.pipelines.llm_pipeline import AgenticRAGWorkflow, SmartLLM
+from src.components.mcp_integration import MCPServer
+from typing import List
 
 class AgenticRAGSystem:
-    """Complete Agentic RAG System with dual pipelines"""
-    
-    def __init__(self, 
-                 embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
-                 llm_model: str = "gemma3:4b",
-                 ollama_url: str = "http://localhost:11434"):
+    def __init__(self):
+        print("Initializing True Agentic RAG...")
         
-        print("\n" + "="*70)
-        print("INITIALIZING AGENTIC RAG SYSTEM")
-        print("="*70)
-        
-        # Initialize Pipeline 1: Data Processing
-        self.data_pipeline = DataProcessingPipeline(embedding_model_name=embedding_model)
-        
-        # Initialize LLM
-        print(f"\nConnecting to Ollama LLM ({llm_model})...")
-        self.llm = OllamaLLM(model=llm_model, base_url=ollama_url)
-        print("✓ LLM connected")
-        
-        # Initialize Pipeline 2: Agentic Retrieval
-        print(f"\nInitializing Agentic Retriever...")
-        self.retriever = AgenticRetriever(
-            data_pipeline=self.data_pipeline,
-            llm=self.llm,
-            bm25_weight=0.3,
-            vector_weight=0.7
+        # Data pipeline
+        self.data_pipeline = DataProcessingPipeline(
+            embedding_model_name="sentence-transformers/all-mpnet-base-v2"
         )
         
-        print("\n" + "="*70)
-        print("✓ SYSTEM READY")
-        print("="*70)
+        # LLM with auto-fallback
+        self.llm = SmartLLM(
+            ollama_model="gemma3:4b",
+        )
+        
+        # MCP server
+        self.mcp = MCPServer()
+        
+        # LangGraph workflow
+        self.workflow = AgenticRAGWorkflow(
+            data_pipeline=self.data_pipeline,
+            llm=self.llm,
+            max_iterations=3
+        )
+        
+        print("✓ True Agentic RAG ready!")
     
     def ingest_documents(self, filepaths: List[str]):
-        """Ingest documents through Pipeline 1"""
-        print("\n" + "="*70)
-        print("PIPELINE 1: DATA PROCESSING")
-        print("="*70)
-        
+        """Standard document ingestion"""
         for filepath in filepaths:
             self.data_pipeline.process_document(filepath)
-        
-        # Build indexes
         self.data_pipeline.build_indexes()
-        
-        print("\n✓ Data ingestion complete")
-        print(f"  Total chunks indexed: {len(self.data_pipeline.chunks)}")
     
-    def query(self, question: str, verbose: bool = True) -> Dict[str, Any]:
-        """Query through Pipeline 2 (Agentic Retrieval)"""
-        if verbose:
-            print("\n" + "="*70)
-            print("PIPELINE 2: AGENTIC RETRIEVAL")
-            print("="*70)
-        
-        return self.retriever.answer_question(question, verbose=verbose)
-
-
-# ============================================================================
-# EXAMPLE USAGE
-# ============================================================================
-
-if __name__ == "__main__":
-    # Initialize system
-    rag = AgenticRAGSystem(
-        embedding_model="sentence-transformers/all-mpnet-base-v2",
-        llm_model="gemma3:4b"
-    )
+    def ingest_from_local(self, directory: str):
+        """Ingest via MCP - local files"""
+        files = self.mcp.list_local_files(directory)
+        doc_files = [f['path'] for f in files 
+                     if f['type'] in ['.pdf', '.docx', '.xlsx', '.pptx', '.txt']]
+        self.ingest_documents(doc_files)
     
-    # Ingest documents
-    documents = [
-      "data/AI_Engineer_Assignment.pdf",
-
-    ]
+    def query(self, question: str):
+        """Multi-agent query processing"""
+        return self.workflow.run(question)
     
-    if documents:
-        rag.ingest_documents(documents)
-        
-        # Query
-        result = rag.query("what is the assignemnt i hv to do?")
-        
-        print("\n" + "="*70)
-        print("ANSWER")
-        print("="*70)
-        print(result['answer'])
-        print("\nSources:")
-        for i, source in enumerate(result['sources'], 1):
-            print(f"  {i}. {source['filename']} (score: {source['score']:.4f})")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == '__main__':
+    # Initialize
+    rag = AgenticRAGSystem()
+    
+    # Ingest (choose one)
+    # rag.ingest_documents(["data/AI_Engineer_Assignment.pdf"])
+    # OR
+    rag.ingest_from_local("./data")
+    # OR
+    # rag.ingest_from_drive(folder_id="abc123")
+    
+    # Query with multi-agent workflow
+    result = rag.query("What are the requirements?")
+    
+    print(f"Answer: {result['answer']}")
+    print(f"Confidence: {result['confidence']}")
+    print(f"Agents used: 4 (Planner → Retriever → Evaluator → Answerer)")
+    print(f"Iterations: {result['iterations']}")
